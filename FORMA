@@ -1,0 +1,566 @@
+import { useState, useEffect, useRef } from "react";
+
+const PASTEL_COMBOS = [
+  ["#F2C4CE","#D4C5E2"],
+  ["#C3D9C8","#C5D9E8"],
+  ["#F7D9C4","#F2C4CE"],
+  ["#D4C5E2","#C3D9C8"],
+  ["#C5D9E8","#D4C5E2"],
+];
+const ICONS = ["🏠","🏢","🏛️","🏗️","🌿","🏙️","🌊","⛪","🏰","🌁"];
+
+const NAV_LINKS = ["About","Work","Services","Team","Contact"];
+
+function Section({ id, children, style, className="" }) {
+  return <section id={id} style={style} className={className}>{children}</section>;
+}
+
+function Tag({ children }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:12,fontSize:10,letterSpacing:4,textTransform:"uppercase",color:"#C4856A",marginBottom:24}}>
+      <span style={{width:28,height:1,background:"#C4856A",display:"inline-block"}}></span>
+      {children}
+    </div>
+  );
+}
+
+function RevealDiv({ children, style, delay=0 }) {
+  const ref = useRef();
+  const [vis, setVis] = useState(false);
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => { if(e.isIntersecting) setVis(true); }, {threshold:0.1});
+    if(ref.current) obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, []);
+  return (
+    <div ref={ref} style={{
+      opacity: vis ? 1 : 0,
+      transform: vis ? "translateY(0)" : "translateY(32px)",
+      transition: `opacity 0.7s ${delay}s ease, transform 0.7s ${delay}s ease`,
+      ...style
+    }}>{children}</div>
+  );
+}
+
+export default function FormaPortfolio() {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [notify, setNotify] = useState("");
+  const [notifyShow, setNotifyShow] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [activeSection, setActiveSection] = useState("home");
+  const [form, setForm] = useState({ name:"", type:"Residential", year:"", location:"", desc:"", architect:"", area:"" });
+  const [imgPreview, setImgPreview] = useState(null);
+  const [imgData, setImgData] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [contactForm, setContactForm] = useState({ name:"", email:"", phone:"", type:"", budget:"", message:"" });
+  const fileRef = useRef();
+
+  // Load shared projects on mount
+  useEffect(() => {
+    loadProjects();
+    window.addEventListener("scroll", () => setScrolled(window.scrollY > 60));
+    return () => window.removeEventListener("scroll", () => {});
+  }, []);
+
+  async function loadProjects() {
+    setLoading(true);
+    try {
+      const result = await window.storage.list("proj:", true);
+      if (result && result.keys && result.keys.length > 0) {
+        const loaded = [];
+        for (const key of result.keys) {
+          try {
+            const r = await window.storage.get(key, true);
+            if (r) loaded.push(JSON.parse(r.value));
+          } catch {}
+        }
+        loaded.sort((a,b) => b.timestamp - a.timestamp);
+        setProjects(loaded);
+      }
+    } catch {}
+    setLoading(false);
+  }
+
+  function showNotify(msg) {
+    setNotify(msg); setNotifyShow(true);
+    setTimeout(() => setNotifyShow(false), 3500);
+  }
+
+  function handleImg(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setImgPreview(ev.target.result);
+      setImgData(ev.target.result);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function addProject() {
+    if (!form.name.trim()) { showNotify("Please enter a project name."); return; }
+    setSubmitting(true);
+    const id = `proj:${Date.now()}`;
+    const idx = projects.length % PASTEL_COMBOS.length;
+    const project = {
+      id, name: form.name, type: form.type, year: form.year,
+      location: form.location, desc: form.desc, architect: form.architect,
+      area: form.area, img: imgData,
+      combo: PASTEL_COMBOS[idx], icon: ICONS[projects.length % ICONS.length],
+      timestamp: Date.now()
+    };
+    try {
+      await window.storage.set(id, JSON.stringify(project), true);
+      setProjects(prev => [project, ...prev]);
+      setModal(false);
+      setForm({ name:"", type:"Residential", year:"", location:"", desc:"", architect:"", area:"" });
+      setImgPreview(null); setImgData(null);
+      showNotify(`"${form.name}" published to your portfolio! 🎉`);
+    } catch { showNotify("Upload failed. Please try again."); }
+    setSubmitting(false);
+  }
+
+  async function deleteProject(proj) {
+    try {
+      await window.storage.delete(proj.id, true);
+      setProjects(prev => prev.filter(p => p.id !== proj.id));
+      showNotify("Project removed.");
+    } catch { showNotify("Could not remove project."); }
+  }
+
+  const scrollTo = (id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior:"smooth" });
+  };
+
+  const inputStyle = {
+    width:"100%", background:"transparent", border:"none", borderBottom:"1.5px solid #D9D5CF",
+    padding:"10px 0", fontFamily:"Georgia, serif", fontSize:15, color:"#2C2C2C",
+    outline:"none", marginTop:4
+  };
+  const labelStyle = { fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"#7A7670", display:"block", marginTop:20 };
+
+  return (
+    <div style={{ fontFamily:"'Georgia', serif", background:"#FAF7F2", color:"#2C2C2C", minHeight:"100vh", overflowX:"hidden" }}>
+      {/* Notification */}
+      <div style={{
+        position:"fixed", bottom:28, right:28, background:"#2C2C2C", color:"white",
+        padding:"16px 24px", fontSize:13, borderLeft:"3px solid #C4856A",
+        zIndex:9999, transition:"all 0.4s cubic-bezier(.16,1,.3,1)",
+        transform: notifyShow ? "translateY(0)" : "translateY(120px)",
+        opacity: notifyShow ? 1 : 0, maxWidth:300, fontFamily:"sans-serif"
+      }}>{notify}</div>
+
+      {/* NAV */}
+      <nav style={{
+        position:"fixed", top:0, left:0, right:0, zIndex:100,
+        display:"flex", justifyContent:"space-between", alignItems:"center",
+        padding:"24px 60px",
+        background: scrolled ? "rgba(250,247,242,0.92)" : "transparent",
+        backdropFilter: scrolled ? "blur(16px)" : "none",
+        borderBottom: scrolled ? "1px solid rgba(0,0,0,0.06)" : "none",
+        transition:"all 0.4s"
+      }}>
+        <span style={{fontSize:20,letterSpacing:8,fontWeight:400,color:"#2C2C2C",cursor:"pointer"}} onClick={() => scrollTo("home")}>FORMA</span>
+        <div style={{display:"flex",gap:36}}>
+          {NAV_LINKS.map(l => (
+            <a key={l} onClick={() => scrollTo(l.toLowerCase())}
+              style={{fontSize:11,letterSpacing:2,textTransform:"uppercase",color:"#7A7670",textDecoration:"none",cursor:"pointer",transition:"color 0.2s"}}
+              onMouseEnter={e=>e.target.style.color="#C4856A"} onMouseLeave={e=>e.target.style.color="#7A7670"}>{l}</a>
+          ))}
+        </div>
+        <button onClick={() => setModal(true)} style={{
+          background:"#C4856A", color:"white", border:"none", padding:"10px 28px",
+          fontSize:10, letterSpacing:2, textTransform:"uppercase", cursor:"pointer",
+          fontFamily:"sans-serif", transition:"background 0.2s"
+        }}>+ Add Project</button>
+      </nav>
+
+      {/* HERO */}
+      <Section id="home" style={{
+        minHeight:"100vh", display:"grid", gridTemplateColumns:"1fr 1fr", paddingTop:80
+      }}>
+        <div style={{display:"flex",flexDirection:"column",justifyContent:"center",padding:"80px 80px 80px 80px"}}>
+          <div style={{fontSize:10,letterSpacing:4,textTransform:"uppercase",color:"#C4856A",marginBottom:28,display:"flex",alignItems:"center",gap:12}}>
+            <span style={{width:28,height:1,background:"#C4856A",display:"inline-block"}}></span>
+            Architecture & Design Studio — Est. 2012
+          </div>
+          <h1 style={{fontSize:"clamp(56px,7vw,100px)",lineHeight:0.95,fontWeight:300,marginBottom:36}}>
+            We craft<br/><em style={{color:"#C4856A"}}>spaces</em><br/>that breathe
+          </h1>
+          <p style={{fontSize:15,lineHeight:1.9,color:"#7A7670",maxWidth:380,marginBottom:48,fontFamily:"sans-serif"}}>
+            FORMA is an award-winning architecture studio weaving together structure, light, and human experience into spaces that endure through time.
+          </p>
+          <div style={{display:"flex",gap:20,alignItems:"center"}}>
+            <button onClick={() => scrollTo("work")} style={{
+              background:"#2C2C2C",color:"white",border:"none",padding:"14px 36px",
+              fontSize:11,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",
+              fontFamily:"sans-serif",transition:"all 0.2s"
+            }}>View Our Work</button>
+            <button onClick={() => scrollTo("contact")} style={{
+              background:"none",border:"none",fontSize:11,letterSpacing:2,
+              textTransform:"uppercase",color:"#7A7670",cursor:"pointer",
+              borderBottom:"1px solid #B8B4AF",paddingBottom:2,fontFamily:"sans-serif"
+            }}>Get in Touch</button>
+          </div>
+          <div style={{display:"flex",gap:48,marginTop:72}}>
+            {[["180+","Projects"],["28","Awards"],["13","Years"]].map(([n,l]) => (
+              <div key={l}>
+                <div style={{fontSize:40,fontWeight:300,color:"#2C2C2C",lineHeight:1}}>{n}</div>
+                <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:"#B8B4AF",fontFamily:"sans-serif",marginTop:6}}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{background:"linear-gradient(135deg,#F2C4CE 0%,#D4C5E2 50%,#C3D9C8 100%)",position:"relative",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {[{w:280,h:280,bg:"#F7D9C4",t:"15%",l:"10%",anim:"float1"},{w:180,h:180,bg:"#C5D9E8",b:"20%",r:"10%",anim:"float2"},{w:120,h:120,bg:"#D4C5E2",t:"55%",l:"30%",anim:"float3"}].map((s,i)=>(
+            <div key={i} style={{
+              position:"absolute", width:s.w, height:s.h, borderRadius:"50%",
+              background:s.bg, top:s.t, left:s.l, bottom:s.b, right:s.r,
+              mixBlendMode:"multiply", opacity:0.7,
+              animation:`float${i+1} ${6+i*2}s ease-in-out infinite ${i}s`
+            }}/>
+          ))}
+          <svg width="180" height="280" viewBox="0 0 200 300" style={{position:"absolute",bottom:0,opacity:0.5}}>
+            <rect x="60" y="50" width="80" height="250" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.3)" strokeWidth="1"/>
+            <rect x="80" y="30" width="40" height="270" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.25)" strokeWidth="1"/>
+            <rect x="10" y="100" width="50" height="200" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.2)" strokeWidth="1"/>
+            <rect x="140" y="120" width="50" height="180" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.2)" strokeWidth="1"/>
+            {[90,130,170,210,250].map(y=><line key={y} x1="60" y1={y} x2="140" y2={y} stroke="rgba(255,255,255,0.2)" strokeWidth="0.5"/>)}
+          </svg>
+          <style>{`
+            @keyframes float1{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-18px) scale(1.02)}}
+            @keyframes float2{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-14px) scale(1.02)}}
+            @keyframes float3{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+          `}</style>
+        </div>
+      </Section>
+
+      {/* MARQUEE */}
+      <div style={{background:"#2C2C2C",padding:"18px 0",overflow:"hidden"}}>
+        <div style={{display:"flex",gap:64,animation:"marquee 22s linear infinite",whiteSpace:"nowrap"}}>
+          {Array(2).fill(["Residential Architecture","Commercial Spaces","Interior Design","Urban Planning","Landscape Design","Sustainable Architecture","Heritage Restoration","Cultural Institutions"]).flat().map((t,i)=>(
+            <span key={i} style={{fontSize:16,fontStyle:"italic",color:"rgba(255,255,255,0.35)",flexShrink:0}}>
+              {t} <span style={{fontSize:9,color:"#C4856A",fontStyle:"normal"}}>◇</span>
+            </span>
+          ))}
+        </div>
+        <style>{`@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}`}</style>
+      </div>
+
+      {/* ABOUT */}
+      <Section id="about" style={{padding:"120px 80px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:80,alignItems:"center"}}>
+        <div>
+          <RevealDiv><Tag>Our Philosophy</Tag></RevealDiv>
+          <RevealDiv delay={0.1}><h2 style={{fontSize:"clamp(36px,4vw,58px)",lineHeight:1.1,fontWeight:300,marginBottom:28}}>Architecture <em style={{color:"#C4856A"}}>rooted</em> in purpose</h2></RevealDiv>
+          <RevealDiv delay={0.2}><p style={{fontSize:15,lineHeight:1.9,color:"#7A7670",fontFamily:"sans-serif",marginBottom:18}}>At FORMA, we believe every building tells a story. We listen deeply to our clients, communities, and the land itself before a single line is drawn.</p></RevealDiv>
+          <RevealDiv delay={0.3}><p style={{fontSize:15,lineHeight:1.9,color:"#7A7670",fontFamily:"sans-serif",marginBottom:32}}>From intimate private residences to large-scale civic landmarks, we bring the same rigour and care to every commission.</p></RevealDiv>
+          <RevealDiv delay={0.4}>
+            <button onClick={() => scrollTo("contact")} style={{background:"#2C2C2C",color:"white",border:"none",padding:"14px 36px",fontSize:11,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontFamily:"sans-serif"}}>Work With Us</button>
+          </RevealDiv>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+          {[{bg:"#F2C4CE",icon:"🏛️",title:"Heritage",text:"We honor the past while building for the future.",mt:0},{bg:"#C3D9C8",icon:"🌿",title:"Sustainability",text:"Every project designed with environmental responsibility at its core.",mt:32},{bg:"#D4C5E2",icon:"✦",title:"Precision",text:"Details matter. We obsess over every element.",mt:0},{bg:"#F7D9C4",icon:"🤝",title:"Collaboration",text:"Architecture is a conversation with clients and craftspeople.",mt:-32}].map((c,i) => (
+            <RevealDiv key={i} delay={i*0.1} style={{marginTop:c.mt}}>
+              <div style={{background:"#FDF9F5",padding:"36px 28px",border:"1px solid rgba(0,0,0,0.05)",position:"relative",overflow:"hidden",transition:"transform 0.3s",cursor:"default"}}
+                onMouseEnter={e=>e.currentTarget.style.transform="translateY(-6px)"}
+                onMouseLeave={e=>e.currentTarget.style.transform="translateY(0)"}>
+                <div style={{position:"absolute",bottom:-16,right:-16,width:64,height:64,borderRadius:"50%",background:c.bg,opacity:0.5}}/>
+                <div style={{fontSize:26,marginBottom:16}}>{c.icon}</div>
+                <div style={{fontSize:20,fontWeight:400,marginBottom:10}}>{c.title}</div>
+                <div style={{fontSize:13,lineHeight:1.7,color:"#7A7670",fontFamily:"sans-serif"}}>{c.text}</div>
+              </div>
+            </RevealDiv>
+          ))}
+        </div>
+      </Section>
+
+      {/* PORTFOLIO */}
+      <Section id="work" style={{padding:"100px 80px",background:"#FDF9F5"}}>
+        <RevealDiv style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:48}}>
+          <div>
+            <Tag>Our Portfolio</Tag>
+            <h2 style={{fontSize:"clamp(36px,4vw,58px)",lineHeight:1.1,fontWeight:300}}>Selected <em style={{color:"#C4856A"}}>works</em></h2>
+          </div>
+          <button onClick={() => setModal(true)} style={{
+            background:"#F2C4CE",border:"none",padding:"12px 32px",fontSize:11,
+            letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontFamily:"sans-serif",
+            color:"#2C2C2C",transition:"all 0.2s"
+          }}>+ Add Your Project</button>
+        </RevealDiv>
+
+        {/* Share Banner */}
+        <RevealDiv style={{
+          background:"linear-gradient(135deg,#F2C4CE,#D4C5E2)",
+          padding:"24px 36px",marginBottom:48,
+          display:"flex",justifyContent:"space-between",alignItems:"center"
+        }}>
+          <div>
+            <div style={{fontSize:16,fontWeight:400,marginBottom:4}}>🔗 Share this portfolio</div>
+            <div style={{fontSize:13,color:"#7A7670",fontFamily:"sans-serif"}}>Anyone with this link can view and contribute to the portfolio</div>
+          </div>
+          <button onClick={() => { navigator.clipboard.writeText(window.location.href); showNotify("Link copied to clipboard! Share it with anyone. ✦"); }} style={{
+            background:"#2C2C2C",color:"white",border:"none",padding:"12px 28px",
+            fontSize:11,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontFamily:"sans-serif"
+          }}>Copy Share Link</button>
+        </RevealDiv>
+
+        {loading ? (
+          <div style={{textAlign:"center",padding:"80px 0",color:"#7A7670",fontFamily:"sans-serif"}}>
+            <div style={{fontSize:32,marginBottom:16}}>◈</div>
+            Loading portfolio...
+          </div>
+        ) : projects.length === 0 ? (
+          <div style={{
+            border:"2px dashed #F2C4CE", padding:"80px 60px", textAlign:"center",
+            cursor:"pointer",transition:"all 0.3s"
+          }} onClick={() => setModal(true)}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="#C4856A";e.currentTarget.style.background="rgba(242,196,206,0.06)";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="#F2C4CE";e.currentTarget.style.background="transparent";}}>
+            <div style={{fontSize:48,marginBottom:16}}>📐</div>
+            <div style={{fontSize:28,fontWeight:300,marginBottom:12}}>No projects yet</div>
+            <div style={{fontSize:13,color:"#7A7670",fontFamily:"sans-serif",marginBottom:28}}>Be the first to upload architectural work to this shared portfolio</div>
+            <div style={{display:"inline-block",background:"#F2C4CE",color:"#2C2C2C",padding:"14px 36px",fontSize:11,letterSpacing:2,textTransform:"uppercase",fontFamily:"sans-serif"}}>Upload First Project</div>
+          </div>
+        ) : (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:24}}>
+            {projects.map((p, i) => (
+              <RevealDiv key={p.id} delay={i * 0.08}>
+                <div style={{position:"relative",overflow:"hidden",cursor:"default",background:"#FAF7F2",group:"",}}
+                  onMouseEnter={e=>{e.currentTarget.querySelector(".overlay").style.opacity=1; e.currentTarget.querySelector(".thumb").style.transform="scale(1.04)";}}
+                  onMouseLeave={e=>{e.currentTarget.querySelector(".overlay").style.opacity=0; e.currentTarget.querySelector(".thumb").style.transform="scale(1)";}}>
+                  {p.img ? (
+                    <img className="thumb" src={p.img} alt={p.name} style={{width:"100%",aspectRatio:"3/4",objectFit:"cover",display:"block",transition:"transform 0.6s"}}/>
+                  ) : (
+                    <div className="thumb" style={{
+                      width:"100%",aspectRatio:"3/4",display:"flex",flexDirection:"column",alignItems:"center",
+                      justifyContent:"center",fontSize:13,color:"#7A7670",gap:12,
+                      background:`linear-gradient(145deg,${p.combo[0]},${p.combo[1]})`,
+                      transition:"transform 0.6s"
+                    }}>
+                      <span style={{fontSize:48}}>{p.icon}</span>
+                      <span style={{fontFamily:"sans-serif"}}>{p.name}</span>
+                    </div>
+                  )}
+                  <div className="overlay" style={{
+                    position:"absolute",inset:0,
+                    background:"linear-gradient(to top,rgba(44,44,44,0.88) 0%,transparent 60%)",
+                    opacity:0,transition:"opacity 0.4s",display:"flex",flexDirection:"column",
+                    justifyContent:"flex-end",padding:28
+                  }}>
+                    <div style={{fontSize:24,fontWeight:300,color:"white",marginBottom:4}}>{p.name}</div>
+                    <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:"#F2C4CE",marginBottom:16}}>{p.type}{p.location ? " · "+p.location : ""}{p.year ? " · "+p.year : ""}</div>
+                    {p.desc && <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",fontFamily:"sans-serif",lineHeight:1.6,marginBottom:12}}>{p.desc.slice(0,100)}{p.desc.length>100?"…":""}</div>}
+                    <button onClick={() => deleteProject(p)} style={{
+                      background:"rgba(196,133,106,0.3)",border:"1px solid rgba(196,133,106,0.5)",
+                      color:"white",padding:"6px 16px",fontSize:10,letterSpacing:1,
+                      textTransform:"uppercase",cursor:"pointer",fontFamily:"sans-serif",alignSelf:"flex-start"
+                    }}>Remove</button>
+                  </div>
+                  <div style={{position:"absolute",top:16,left:16,background:"rgba(250,247,242,0.92)",padding:"5px 12px",fontSize:10,letterSpacing:2,textTransform:"uppercase",color:"#7A7670",backdropFilter:"blur(4px)"}}>{p.type}</div>
+                </div>
+              </RevealDiv>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* SERVICES */}
+      <Section id="services" style={{padding:"120px 80px",background:"#2C2C2C",color:"white",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 80% 50%,rgba(196,133,106,0.1) 0%,transparent 60%)"}}/>
+        <RevealDiv style={{marginBottom:72,position:"relative"}}>
+          <Tag>What We Do</Tag>
+          <h2 style={{fontSize:"clamp(36px,4vw,58px)",lineHeight:1.1,fontWeight:300,color:"white"}}>Our <em style={{color:"#F2C4CE"}}>expertise</em></h2>
+        </RevealDiv>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:2,position:"relative"}}>
+          {[{n:"01",icon:"🏗️",name:"Architecture",text:"Full architectural services from concept through construction, residential to civic scale."},{n:"02",icon:"🪑",name:"Interior Design",text:"Thoughtful interiors that extend the architectural vision into every surface and light."},{n:"03",icon:"🌳",name:"Landscape",text:"Outdoor environments designed to connect people with nature and complement built form."},{n:"04",icon:"📋",name:"Consulting",text:"Expert guidance on planning, heritage assessment, sustainability, and urban design."}].map((s,i)=>(
+            <RevealDiv key={i} delay={i*0.1}>
+              <div style={{background:"rgba(255,255,255,0.04)",padding:"44px 32px",border:"1px solid rgba(255,255,255,0.06)",position:"relative",overflow:"hidden",transition:"all 0.3s",cursor:"default"}}
+                onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.09)";e.currentTarget.style.transform="translateY(-4px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)";}}>
+                <div style={{fontSize:44,fontWeight:300,color:"rgba(255,255,255,0.08)",marginBottom:20,fontFamily:"Georgia"}}>{s.n}</div>
+                <div style={{fontSize:26,marginBottom:18}}>{s.icon}</div>
+                <div style={{fontSize:22,fontWeight:300,color:"white",marginBottom:14}}>{s.name}</div>
+                <div style={{fontSize:13,lineHeight:1.7,color:"rgba(255,255,255,0.5)",fontFamily:"sans-serif"}}>{s.text}</div>
+              </div>
+            </RevealDiv>
+          ))}
+        </div>
+      </Section>
+
+      {/* PROCESS */}
+      <Section style={{padding:"120px 80px"}}>
+        <RevealDiv style={{textAlign:"center",marginBottom:72}}>
+          <Tag>How We Work</Tag>
+          <h2 style={{fontSize:"clamp(36px,4vw,58px)",lineHeight:1.1,fontWeight:300}}>Our <em style={{color:"#C4856A"}}>process</em></h2>
+        </RevealDiv>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0,position:"relative"}}>
+          <div style={{position:"absolute",top:24,left:"12.5%",right:"12.5%",height:1,background:"#F2C4CE",zIndex:0}}/>
+          {[{n:1,bg:"#F2C4CE",name:"Discover",text:"Deep listening to understand your vision, site, and life. We ask the questions no one else does."},{n:2,bg:"#C3D9C8",name:"Design",text:"Iterative concept development and model-making until the design feels inevitable."},{n:3,bg:"#D4C5E2",name:"Document",text:"Meticulous construction documentation and specification for flawless execution."},{n:4,bg:"#F7D9C4",name:"Deliver",text:"On-site oversight, quality control, and a seamless handover."}].map((s,i)=>(
+            <RevealDiv key={i} delay={i*0.1} style={{padding:"0 28px",textAlign:"center",position:"relative",zIndex:1}}>
+              <div style={{width:48,height:48,borderRadius:"50%",background:s.bg,margin:"0 auto 28px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{s.n}</div>
+              <div style={{fontSize:22,fontWeight:400,marginBottom:10}}>{s.name}</div>
+              <div style={{fontSize:13,lineHeight:1.7,color:"#7A7670",fontFamily:"sans-serif"}}>{s.text}</div>
+            </RevealDiv>
+          ))}
+        </div>
+      </Section>
+
+      {/* TEAM */}
+      <Section id="team" style={{padding:"120px 80px",background:"#FDF9F5"}}>
+        <RevealDiv style={{textAlign:"center",marginBottom:64}}>
+          <Tag>The People</Tag>
+          <h2 style={{fontSize:"clamp(36px,4vw,58px)",lineHeight:1.1,fontWeight:300}}>Meet the <em style={{color:"#C4856A"}}>studio</em></h2>
+        </RevealDiv>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:32}}>
+          {[{emoji:"👩‍💼",grad:["#F2C4CE","#D4C5E2"],name:"Elena Marchetti",role:"Founding Principal",bio:"15 years shaping skylines from Milan to Melbourne. Elena's work is defined by an obsession with light and civic responsibility."},{emoji:"👨‍🎨",grad:["#C3D9C8","#C5D9E8"],name:"Ryo Tanaka",role:"Design Director",bio:"Trained in Tokyo and London, Ryo brings a quiet precision to every drawing — his detailing is considered among the finest."},{emoji:"👩‍🔬",grad:["#F7D9C4","#F2C4CE"],name:"Amara Osei",role:"Sustainability Lead",bio:"Amara integrates passive design, biophilic principles, and regenerative systems into every project from the very first sketch."}].map((m,i)=>(
+            <RevealDiv key={i} delay={i*0.15} style={{textAlign:"center"}}>
+              <div style={{width:"100%",aspectRatio:"4/5",marginBottom:24,overflow:"hidden",background:`linear-gradient(160deg,${m.grad[0]},${m.grad[1]})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:72}}>
+                {m.emoji}
+              </div>
+              <div style={{fontSize:26,fontWeight:400,marginBottom:4}}>{m.name}</div>
+              <div style={{fontSize:11,letterSpacing:2,textTransform:"uppercase",color:"#C4856A",marginBottom:12,fontFamily:"sans-serif"}}>{m.role}</div>
+              <div style={{fontSize:13,lineHeight:1.7,color:"#7A7670",fontFamily:"sans-serif"}}>{m.bio}</div>
+            </RevealDiv>
+          ))}
+        </div>
+      </Section>
+
+      {/* CONTACT */}
+      <Section id="contact" style={{padding:"120px 80px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:80}}>
+        <div>
+          <RevealDiv><Tag>Reach Out</Tag></RevealDiv>
+          <RevealDiv delay={0.1}><h2 style={{fontSize:"clamp(36px,4vw,58px)",lineHeight:1.1,fontWeight:300,marginBottom:20}}>Let's build something <em style={{color:"#C4856A"}}>beautiful</em></h2></RevealDiv>
+          <RevealDiv delay={0.2}><p style={{fontSize:15,lineHeight:1.9,color:"#7A7670",fontFamily:"sans-serif",marginBottom:40}}>We take on a limited number of commissions each year to ensure every client receives our full attention.</p></RevealDiv>
+          <RevealDiv delay={0.3}>
+            <div style={{display:"flex",flexDirection:"column",gap:28}}>
+              {[{bg:"#F2C4CE",icon:"📍",label:"Studio Address",val:"12 Atelier Lane, Melbourne VIC 3000, Australia"},{bg:"#C3D9C8",icon:"✉️",label:"Email",val:"hello@forma-studio.com"},{bg:"#D4C5E2",icon:"📞",label:"Phone",val:"+61 3 9000 1234"},{bg:"#F7D9C4",icon:"🕐",label:"Studio Hours",val:"Mon–Fri 9:00 – 18:00 AEST"}].map((c,i)=>(
+                <div key={i} style={{display:"flex",gap:18,alignItems:"flex-start"}}>
+                  <div style={{width:44,height:44,borderRadius:"50%",background:c.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{c.icon}</div>
+                  <div>
+                    <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:"#B8B4AF",fontFamily:"sans-serif",marginBottom:3}}>{c.label}</div>
+                    <div style={{fontSize:14,color:"#2C2C2C",fontFamily:"sans-serif"}}>{c.val}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </RevealDiv>
+        </div>
+        <RevealDiv delay={0.2}>
+          <div style={{background:"#FDF9F5",padding:"52px",border:"1px solid rgba(0,0,0,0.05)"}}>
+            <div style={{fontSize:30,fontWeight:300,marginBottom:6}}>Start a conversation</div>
+            <div style={{fontSize:13,color:"#7A7670",fontFamily:"sans-serif",marginBottom:36}}>We'll be in touch within 48 hours.</div>
+            {[{label:"Your Name",key:"name",placeholder:"First & Last Name",type:"text"},{label:"Email",key:"email",placeholder:"your@email.com",type:"email"},{label:"Phone",key:"phone",placeholder:"+1 (000) 000 0000",type:"tel"}].map(f=>(
+              <div key={f.key}>
+                <label style={labelStyle}>{f.label}</label>
+                <input type={f.type} placeholder={f.placeholder} value={contactForm[f.key]}
+                  onChange={e => setContactForm(p=>({...p,[f.key]:e.target.value}))} style={inputStyle}/>
+              </div>
+            ))}
+            <label style={labelStyle}>Project Type</label>
+            <select value={contactForm.type} onChange={e=>setContactForm(p=>({...p,type:e.target.value}))} style={inputStyle}>
+              <option value="">Select a type...</option>
+              {["Residential — New Build","Residential — Renovation","Commercial","Civic / Cultural","Landscape","Interior Design","Consultation"].map(o=><option key={o}>{o}</option>)}
+            </select>
+            <label style={labelStyle}>Message</label>
+            <textarea placeholder="Describe your vision and any special considerations..." rows={4}
+              value={contactForm.message} onChange={e=>setContactForm(p=>({...p,message:e.target.value}))}
+              style={{...inputStyle,resize:"vertical"}}/>
+            <button onClick={()=>{showNotify("Thank you! We'll be in touch within 48 hours. ✦");setContactForm({name:"",email:"",phone:"",type:"",budget:"",message:""}); }} style={{
+              background:"#C4856A",color:"white",border:"none",padding:"16px 48px",
+              fontFamily:"sans-serif",fontSize:11,letterSpacing:2,textTransform:"uppercase",
+              cursor:"pointer",width:"100%",marginTop:20,transition:"background 0.2s"
+            }}>Send Enquiry →</button>
+          </div>
+        </RevealDiv>
+      </Section>
+
+      {/* FOOTER */}
+      <div style={{background:"#F2C4CE",padding:"48px 80px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <p style={{fontSize:22,fontWeight:300,fontStyle:"italic"}}>"Architecture is frozen music." — Schopenhauer</p>
+        <div style={{display:"flex",gap:16}}>
+          {["𝕏","in","📷","📌"].map((s,i)=>(
+            <div key={i} style={{width:44,height:44,borderRadius:"50%",background:"rgba(255,255,255,0.6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,cursor:"pointer",transition:"all 0.2s"}}
+              onMouseEnter={e=>{e.currentTarget.style.background="white";e.currentTarget.style.transform="translateY(-4px)";}}
+              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.6)";e.currentTarget.style.transform="translateY(0)";}}>{s}</div>
+          ))}
+        </div>
+      </div>
+      <footer style={{background:"#2C2C2C",color:"white",padding:"48px 80px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:22,letterSpacing:8,fontWeight:300}}>FORMA</span>
+        <span style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontFamily:"sans-serif"}}>© 2025 FORMA Architecture Studio. All rights reserved.</span>
+        <div style={{display:"flex",gap:28}}>
+          {["Privacy","Terms","Sitemap"].map(l=>(
+            <a key={l} href="#" style={{fontSize:11,letterSpacing:1,color:"rgba(255,255,255,0.4)",textDecoration:"none",fontFamily:"sans-serif"}}>{l}</a>
+          ))}
+        </div>
+      </footer>
+
+      {/* ADD PROJECT MODAL */}
+      {modal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(44,44,44,0.6)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setModal(false);}}>
+          <div style={{background:"#FDF9F5",width:"90%",maxWidth:620,maxHeight:"90vh",overflowY:"auto",padding:"52px",position:"relative",animation:"modalIn 0.4s cubic-bezier(.16,1,.3,1) forwards"}}>
+            <style>{`@keyframes modalIn{from{opacity:0;transform:translateY(40px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}}`}</style>
+            <button onClick={()=>setModal(false)} style={{position:"absolute",top:24,right:24,background:"none",border:"none",fontSize:22,color:"#7A7670",cursor:"pointer"}}>✕</button>
+            <div style={{fontSize:34,fontWeight:300,marginBottom:6}}>Add New Project</div>
+            <div style={{fontSize:13,color:"#7A7670",fontFamily:"sans-serif",marginBottom:36}}>Your project will be visible to anyone with the share link.</div>
+
+            <label style={labelStyle}>Project Name *</label>
+            <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Casa Lumina" style={inputStyle}/>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+              <div>
+                <label style={labelStyle}>Project Type</label>
+                <select value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))} style={inputStyle}>
+                  {["Residential","Commercial","Civic","Interior","Landscape","Mixed-Use","Cultural"].map(t=><option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Year Completed</label>
+                <input value={form.year} onChange={e=>setForm(p=>({...p,year:e.target.value}))} placeholder="e.g. 2024" style={inputStyle}/>
+              </div>
+            </div>
+
+            <label style={labelStyle}>Location</label>
+            <input value={form.location} onChange={e=>setForm(p=>({...p,location:e.target.value}))} placeholder="City, Country" style={inputStyle}/>
+
+            <label style={labelStyle}>Project Description</label>
+            <textarea value={form.desc} onChange={e=>setForm(p=>({...p,desc:e.target.value}))} placeholder="Describe the concept, materials, and key decisions..." rows={3} style={{...inputStyle,resize:"vertical"}}/>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+              <div>
+                <label style={labelStyle}>Lead Architect</label>
+                <input value={form.architect} onChange={e=>setForm(p=>({...p,architect:e.target.value}))} placeholder="Full name" style={inputStyle}/>
+              </div>
+              <div>
+                <label style={labelStyle}>Project Area (m²)</label>
+                <input value={form.area} onChange={e=>setForm(p=>({...p,area:e.target.value}))} placeholder="e.g. 350" style={inputStyle}/>
+              </div>
+            </div>
+
+            <label style={labelStyle}>Project Image</label>
+            <div style={{border:"2px dashed #F2C4CE",padding:"32px",textAlign:"center",cursor:"pointer",marginTop:8,transition:"all 0.2s"}}
+              onClick={()=>fileRef.current.click()}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor="#C4856A";e.currentTarget.style.background="rgba(242,196,206,0.06)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="#F2C4CE";e.currentTarget.style.background="transparent";}}>
+              {imgPreview ? (
+                <img src={imgPreview} alt="preview" style={{maxHeight:160,maxWidth:"100%",objectFit:"cover"}}/>
+              ) : (
+                <div style={{fontSize:13,color:"#7A7670",fontFamily:"sans-serif"}}>🖼️ Click to select an image (JPG, PNG, WebP)</div>
+              )}
+            </div>
+            <input type="file" ref={fileRef} accept="image/*" onChange={handleImg} style={{display:"none"}}/>
+
+            <button onClick={addProject} disabled={submitting} style={{
+              background: submitting ? "#B8B4AF" : "#2C2C2C",
+              color:"white",border:"none",padding:"18px 48px",
+              fontFamily:"sans-serif",fontSize:11,letterSpacing:2,textTransform:"uppercase",
+              cursor: submitting ? "default" : "pointer",width:"100%",marginTop:28,transition:"background 0.2s"
+            }}>{submitting ? "Publishing..." : "Publish Project →"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
